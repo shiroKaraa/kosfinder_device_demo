@@ -1,5 +1,3 @@
-/// Konfigurasi cloud opsional; fitur kamera/GPS/draft tetap berjalan tanpa ini.
-/// Isi melalui --dart-define ketika menjalankan Flutter.
 class CloudConfig {
   static const url = String.fromEnvironment('SUPABASE_URL');
   static const publishableKey =

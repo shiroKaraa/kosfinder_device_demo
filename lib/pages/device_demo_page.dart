@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../cloud_config.dart';
 import '../services/device_location_service.dart';
 import '../services/draft_repository.dart';
 import 'sensor_demo_page.dart';
@@ -67,7 +68,6 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
         _longitude = lng is num ? lng.toDouble() : null;
       });
 
-      // Edge case: draft menunjuk ke file foto yang sudah tidak ada.
       if (storedPhoto != null && !photoFileExists) {
         _notice('File foto draft tidak ditemukan; silakan pilih ulang.');
       }
@@ -198,9 +198,15 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
     _notice('Draft berhasil dihapus.');
   }
 
+  void _onUploadPressed() {
+    _notice('Konfigurasi Supabase belum tersedia.');
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final photoExists = _photoPath != null && File(_photoPath!).existsSync();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('KosFinder · Device Demo'),
@@ -219,90 +225,387 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            _ModeHeader(),
+            const SizedBox(height: 16),
+            _SectionCard(
+              icon: Icons.storefront_outlined,
+              title: 'Info Kos',
+              child: TextField(
+                controller: _nameController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Nama kos',
+                  hintText: 'Contoh: Kos Melati',
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SectionCard(
+              icon: Icons.photo_camera_outlined,
+              title: 'Foto Kos',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _choosePhoto(ImageSource.camera),
+                          icon: const Icon(Icons.camera_alt_outlined),
+                          label: const Text('Kamera'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _choosePhoto(ImageSource.gallery),
+                          icon: const Icon(Icons.photo_library_outlined),
+                          label: const Text('Galeri'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _PhotoPreview(photoPath: photoExists ? _photoPath : null),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Format JPG/JPEG/PNG, maksimal 5 MB.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SectionCard(
+              icon: Icons.place_outlined,
+              title: 'Lokasi',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: _busy ? null : _getLocation,
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('Ambil Koordinat GPS'),
+                  ),
+                  const SizedBox(height: 10),
+                  _LocationInfo(
+                    latitude: _latitude,
+                    longitude: _longitude,
+                  ),
+                  if (_locationError ==
+                      LocationFailureType.serviceDisabled)
+                    TextButton.icon(
+                      onPressed: () => Geolocator.openLocationSettings(),
+                      icon: const Icon(Icons.settings),
+                      label:
+                          const Text('Buka pengaturan layanan lokasi'),
+                    ),
+                  if (_locationError ==
+                      LocationFailureType.deniedForever)
+                    TextButton.icon(
+                      onPressed: () => Geolocator.openAppSettings(),
+                      icon: const Icon(Icons.settings_applications),
+                      label: const Text('Buka pengaturan izin aplikasi'),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SectionCard(
+              icon: Icons.save_outlined,
+              title: 'Simpan & Sinkronisasi',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            try {
+                              await _saveDraft();
+                            } catch (error) {
+                              _notice('Gagal menyimpan draft: $error');
+                            }
+                          },
+                    icon: const Icon(Icons.save),
+                    label: const Text('Simpan Draft Lokal'),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.tonalIcon(
+                    onPressed:
+                        _busy || !CloudConfig.enabled ? null : _onUploadPressed,
+                    icon: const Icon(Icons.cloud_upload_outlined),
+                    label: const Text('Upload Foto ke Supabase'),
+                  ),
+                  if (!CloudConfig.enabled) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Aktifkan dengan --dart-define (lihat README) '
+                      'untuk mengunggah ke Supabase.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: LinearProgressIndicator(),
+              ),
+            const SizedBox(height: 20),
+            const _FooterNote(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Widget kecil (presentational) — dipisah agar build() tetap ringkas */
+/* ------------------------------------------------------------------ */
+
+class _ModeHeader extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final online = CloudConfig.enabled;
+    final color = online ? Colors.teal : theme.colorScheme.onSurfaceVariant;
+    final icon = online ? Icons.cloud_done_outlined : Icons.cloud_off_outlined;
+    final label = online ? 'Lokal + Supabase' : 'Mode lokal/offline';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primaryContainer.withValues(alpha: 0.65),
+            theme.colorScheme.surface,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Row(
         children: [
-          const Text('Mode: lokal/offline'),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Nama kos (contoh: Kos Melati)',
-              border: OutlineInputBorder(),
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+            child: Icon(Icons.home_work_outlined,
+                color: theme.colorScheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KosFinder Device Demo',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Praktikum fitur perangkat standalone',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotoPreview extends StatelessWidget {
+  const _PhotoPreview({required this.photoPath});
+
+  final String? photoPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (photoPath == null) {
+      return Container(
+        height: 160,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              OutlinedButton.icon(
-                onPressed:
-                    _busy ? null : () => _choosePhoto(ImageSource.camera),
-                icon: const Icon(Icons.camera_alt),
-                label: const Text('Kamera'),
-              ),
-              OutlinedButton.icon(
-                onPressed:
-                    _busy ? null : () => _choosePhoto(ImageSource.gallery),
-                icon: const Icon(Icons.photo_library),
-                label: const Text('Galeri'),
+              Icon(Icons.image_outlined,
+                  size: 32, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(height: 6),
+              Text(
+                'Belum ada foto',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          if (photoExists)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.file(
-                File(_photoPath!),
-                height: 200,
-                fit: BoxFit.cover,
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.file(
+        File(photoPath!),
+        height: 200,
+        width: double.infinity,
+        fit: BoxFit.cover,
+      ),
+    );
+  }
+}
+
+class _LocationInfo extends StatelessWidget {
+  const _LocationInfo({required this.latitude, required this.longitude});
+
+  final double? latitude;
+  final double? longitude;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasLocation = latitude != null && longitude != null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.gps_fixed,
+              size: 18, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              hasLocation
+                  ? 'Lat: ${latitude!.toStringAsFixed(6)}, '
+                      'Lng: ${longitude!.toStringAsFixed(6)}'
+                  : 'Koordinat: belum diisi (opsional)',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FooterNote extends StatelessWidget {
+  const _FooterNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.4),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline,
+              size: 18, color: theme.colorScheme.onSecondaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'GPS menunjukkan posisi ponsel, bukan otomatis posisi kos. '
+              'Jangan unggah foto orang atau informasi pribadi untuk demo.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSecondaryContainer,
               ),
-            )
-          else
-            const Text('Belum ada foto. Pilih foto JPG/PNG maksimal 5 MB.'),
-          const Divider(height: 28),
-          FilledButton.tonalIcon(
-            onPressed: _busy ? null : _getLocation,
-            icon: const Icon(Icons.my_location),
-            label: const Text('Ambil Koordinat GPS'),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _latitude == null || _longitude == null
-                ? 'Koordinat: belum diisi (opsional)'
-                : 'Lat: ${_latitude!.toStringAsFixed(6)}, '
-                    'Lng: ${_longitude!.toStringAsFixed(6)}',
-          ),
-          if (_locationError == LocationFailureType.serviceDisabled)
-            TextButton(
-              onPressed: () => Geolocator.openLocationSettings(),
-              child: const Text('Buka pengaturan layanan lokasi'),
             ),
-          if (_locationError == LocationFailureType.deniedForever)
-            TextButton(
-              onPressed: () => Geolocator.openAppSettings(),
-              child: const Text('Buka pengaturan izin aplikasi'),
-            ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _busy
-                ? null
-                : () async {
-                    try {
-                      await _saveDraft();
-                    } catch (error) {
-                      _notice('Gagal menyimpan draft: $error');
-                    }
-                  },
-            icon: const Icon(Icons.save),
-            label: const Text('Simpan Draft Lokal'),
-          ),
-          if (_busy) const LinearProgressIndicator(),
-          const SizedBox(height: 16),
-          const Text(
-            'GPS menunjukkan posisi ponsel, bukan otomatis posisi kos. '
-            'Jangan unggah foto orang atau informasi pribadi untuk demo.',
           ),
         ],
       ),
