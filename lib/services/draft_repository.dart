@@ -1,0 +1,3 @@
+class DraftRepository {
+  DraftRepository();
+}
