@@ -1,7 +1,8 @@
+// ignore_for_file: unnecessary_const
 class CloudConfig {
-  static const url = String.fromEnvironment('SUPABASE_URL');
+  static const url = const String.fromEnvironment('SUPABASE_URL');
   static const publishableKey =
-      String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+      const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
 
   static bool get enabled => url.isNotEmpty && publishableKey.isNotEmpty;
 }

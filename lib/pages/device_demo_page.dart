@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../cloud_config.dart';
 import '../services/device_location_service.dart';
 import '../services/draft_repository.dart';
+import '../services/photo_upload_service.dart';
 import 'sensor_demo_page.dart';
 
 class DeviceDemoPage extends StatefulWidget {
@@ -24,8 +24,11 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
   final _picker = ImagePicker();
   final _drafts = DraftRepository();
   final _location = DeviceLocationService();
+  final _uploader = PhotoUploadService();
 
   String? _photoPath;
+  String? _storagePath;
+  String? _publicUrl;
   double? _latitude;
   double? _longitude;
   LocationFailureType? _locationError;
@@ -62,6 +65,8 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
       setState(() {
         _nameController.text = draft['name'] as String? ?? '';
         _photoPath = photoFileExists ? storedPhoto : null;
+        _storagePath = draft['storagePath'] as String?;
+        _publicUrl = draft['publicUrl'] as String?;
         final lat = draft['latitude'];
         final lng = draft['longitude'];
         _latitude = lat is num ? lat.toDouble() : null;
@@ -96,6 +101,8 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
       'photoPath': _photoPath,
       'latitude': _latitude,
       'longitude': _longitude,
+      'storagePath': _storagePath,
+      'publicUrl': _publicUrl,
     });
     if (showMessage) _notice('Draft berhasil disimpan di perangkat.');
   }
@@ -103,7 +110,11 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
   Future<void> _acceptPhoto(XFile picked) async {
     final permanentPath = await _drafts.savePermanentPhoto(picked);
     if (!mounted) return;
-    setState(() => _photoPath = permanentPath);
+    setState(() {
+      _photoPath = permanentPath;
+      _storagePath = null;
+      _publicUrl = null;
+    });
     await _saveDraft(showMessage: false);
   }
 
@@ -163,6 +174,39 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
     }
   }
 
+  Future<void> _upload() async {
+    if (_busy || !CloudConfig.enabled) return;
+    if (_nameController.text.trim().isEmpty) {
+      _notice('Isi nama kos sebelum mengunggah foto.');
+      return;
+    }
+    final path = _photoPath;
+    if (path == null || !File(path).existsSync()) {
+      _notice('Ambil/pilih foto terlebih dahulu.');
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      final result = await _uploader.upload(File(path));
+      if (!mounted) return;
+      setState(() {
+        _storagePath = result.storagePath;
+        _publicUrl = result.publicUrl;
+      });
+      await _saveDraft(showMessage: false);
+      _notice('Berhasil! Foto tersedia pada Supabase Storage.');
+    } on AuthException catch (error) {
+      _notice('Login anonymous Supabase gagal: ${error.message}');
+    } on StorageException catch (error) {
+      _notice('Upload ditolak Storage: ${error.message}');
+    } catch (error) {
+      _notice('Gagal upload: $error. Draft lokal tetap ada.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _confirmClearDraft() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -191,15 +235,13 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
     setState(() {
       _nameController.clear();
       _photoPath = null;
+      _storagePath = null;
+      _publicUrl = null;
       _latitude = null;
       _longitude = null;
       _locationError = null;
     });
     _notice('Draft berhasil dihapus.');
-  }
-
-  void _onUploadPressed() {
-    _notice('Konfigurasi Supabase belum tersedia.');
   }
 
   @override
@@ -343,7 +385,7 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
                   const SizedBox(height: 8),
                   FilledButton.tonalIcon(
                     onPressed:
-                        _busy || !CloudConfig.enabled ? null : _onUploadPressed,
+                        _busy || !CloudConfig.enabled ? null : _upload,
                     icon: const Icon(Icons.cloud_upload_outlined),
                     label: const Text('Upload Foto ke Supabase'),
                   ),
@@ -356,6 +398,16 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  ],
+                  if (_storagePath != null) ...[
+                    const SizedBox(height: 14),
+                    const Text('Lokasi objek Storage:'),
+                    SelectableText(_storagePath!),
+                  ],
+                  if (_publicUrl != null) ...[
+                    const SizedBox(height: 8),
+                    const Text('URL foto publik:'),
+                    SelectableText(_publicUrl!),
                   ],
                 ],
               ),

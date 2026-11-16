@@ -7,6 +7,9 @@ import 'pages/device_demo_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  debugPrint('CloudConfig.enabled = ${CloudConfig.enabled} '
+      '(url="${CloudConfig.url}", keyLen=${CloudConfig.publishableKey.length})');
+
   if (CloudConfig.enabled) {
     await Supabase.initialize(
       url: CloudConfig.url,
