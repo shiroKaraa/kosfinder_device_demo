@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/device_location_service.dart';
 import '../services/draft_repository.dart';
 import 'sensor_demo_page.dart';
 
@@ -18,8 +20,12 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
   final _nameController = TextEditingController();
   final _picker = ImagePicker();
   final _drafts = DraftRepository();
+  final _location = DeviceLocationService();
 
   String? _photoPath;
+  double? _latitude;
+  double? _longitude;
+  LocationFailureType? _locationError;
   bool _busy = false;
 
   @override
@@ -48,6 +54,10 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
       setState(() {
         _nameController.text = draft['name'] as String? ?? '';
         _photoPath = draft['photoPath'] as String?;
+        final lat = draft['latitude'];
+        final lng = draft['longitude'];
+        _latitude = lat is num ? lat.toDouble() : null;
+        _longitude = lng is num ? lng.toDouble() : null;
       });
       await _recoverInterruptedPicker();
     } catch (error) {
@@ -71,6 +81,8 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
     await _drafts.save({
       'name': _nameController.text.trim(),
       'photoPath': _photoPath,
+      'latitude': _latitude,
+      'longitude': _longitude,
     });
     if (showMessage) _notice('Draft berhasil disimpan di perangkat.');
   }
@@ -105,6 +117,34 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
       _notice(error.message);
     } catch (error) {
       _notice('Gagal memilih foto: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _getLocation() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _locationError = null;
+    });
+    try {
+      final position = await _location.getPosition();
+      if (!mounted) return;
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+      });
+      await _saveDraft(showMessage: false);
+      _notice('Koordinat berhasil diambil dan tersimpan dalam draft.');
+    } on LocationFailure catch (error) {
+      if (!mounted) return;
+      setState(() => _locationError = error.type);
+      _notice(error.message);
+    } on TimeoutException {
+      _notice('Waktu mencari GPS habis. Coba dekat jendela/area terbuka.');
+    } catch (error) {
+      _notice('Lokasi tidak dapat diambil: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -168,6 +208,29 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
             )
           else
             const Text('Belum ada foto. Pilih foto JPG/PNG maksimal 5 MB.'),
+          const Divider(height: 28),
+          FilledButton.tonalIcon(
+            onPressed: _busy ? null : _getLocation,
+            icon: const Icon(Icons.my_location),
+            label: const Text('Ambil Koordinat GPS'),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _latitude == null || _longitude == null
+                ? 'Koordinat: belum diisi (opsional)'
+                : 'Lat: ${_latitude!.toStringAsFixed(6)}, '
+                    'Lng: ${_longitude!.toStringAsFixed(6)}',
+          ),
+          if (_locationError == LocationFailureType.serviceDisabled)
+            TextButton(
+              onPressed: () => Geolocator.openLocationSettings(),
+              child: const Text('Buka pengaturan layanan lokasi'),
+            ),
+          if (_locationError == LocationFailureType.deniedForever)
+            TextButton(
+              onPressed: () => Geolocator.openAppSettings(),
+              child: const Text('Buka pengaturan izin aplikasi'),
+            ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _busy

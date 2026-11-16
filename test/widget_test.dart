@@ -12,7 +12,7 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
   });
 
-  testWidgets('Kerangka KosFinder menampilkan form & tombol dasar',
+  testWidgets('Kerangka KosFinder menampilkan form, kamera, dan tombol GPS',
       (WidgetTester tester) async {
     await tester.pumpWidget(const KosFinderDeviceApp());
     await tester.pumpAndSettle();
@@ -23,8 +23,9 @@ void main() {
     expect(find.text('Kamera'), findsOneWidget);
     expect(find.text('Galeri'), findsOneWidget);
     expect(find.text('Simpan Draft Lokal'), findsOneWidget);
+    expect(find.text('Ambil Koordinat GPS'), findsOneWidget);
+    expect(find.textContaining('Koordinat: belum diisi'), findsOneWidget);
 
-    // Key: reset at the end of the test body
     debugDefaultTargetPlatformOverride = null;
   });
 }
