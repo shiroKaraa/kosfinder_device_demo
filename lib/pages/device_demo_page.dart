@@ -124,8 +124,6 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
     try {
       final picked = await _picker.pickImage(
         source: source,
-        maxWidth: 1600,
-        imageQuality: 80,
       );
       if (picked == null) {
         _notice('Pemilihan foto dibatalkan; draft tidak berubah.');
