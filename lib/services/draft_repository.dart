@@ -5,8 +5,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Demo ini hanya menyimpan satu draft pada SATU perangkat.
-/// Tidak memerlukan login, tabel database, maupun Worksheet 9.
 class DraftRepository {
   static const _draftKey = 'kosfinder_device_demo_draft_v1';
 
@@ -24,9 +22,10 @@ class DraftRepository {
     await _prefs.setString(_draftKey, jsonEncode(draft));
   }
 
-  /// Salin file dari cache image_picker ke Application Documents Directory
-  /// agar tidak hilang saat cache dibersihkan OS.
-  /// Validasi: format JPG/JPEG/PNG, ukuran ≤ 5 MB.
+  Future<void> clear() async {
+    await _prefs.remove(_draftKey);
+  }
+
   Future<String> savePermanentPhoto(XFile selected) async {
     final ext = selected.name.split('.').last.toLowerCase();
     if (!{'jpg', 'jpeg', 'png'}.contains(ext)) {

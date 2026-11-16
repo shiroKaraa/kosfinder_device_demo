@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../services/device_location_service.dart';
 import '../services/draft_repository.dart';
 import 'sensor_demo_page.dart';
@@ -51,14 +53,25 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
     try {
       final draft = await _drafts.load();
       if (!mounted) return;
+
+      final storedPhoto = draft['photoPath'] as String?;
+      final photoFileExists =
+          storedPhoto != null && File(storedPhoto).existsSync();
+
       setState(() {
         _nameController.text = draft['name'] as String? ?? '';
-        _photoPath = draft['photoPath'] as String?;
+        _photoPath = photoFileExists ? storedPhoto : null;
         final lat = draft['latitude'];
         final lng = draft['longitude'];
         _latitude = lat is num ? lat.toDouble() : null;
         _longitude = lng is num ? lng.toDouble() : null;
       });
+
+      // Edge case: draft menunjuk ke file foto yang sudah tidak ada.
+      if (storedPhoto != null && !photoFileExists) {
+        _notice('File foto draft tidak ditemukan; silakan pilih ulang.');
+      }
+
       await _recoverInterruptedPicker();
     } catch (error) {
       _notice('Draft lokal belum dapat dibaca: $error');
@@ -150,6 +163,41 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
     }
   }
 
+  Future<void> _confirmClearDraft() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus draft lokal?'),
+        content: const Text(
+          'Nama, foto, dan koordinat yang tersimpan akan dihapus. '
+          'File foto lama tetap berada di penyimpanan aplikasi.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await _drafts.clear();
+    if (!mounted) return;
+    setState(() {
+      _nameController.clear();
+      _photoPath = null;
+      _latitude = null;
+      _longitude = null;
+      _locationError = null;
+    });
+    _notice('Draft berhasil dihapus.');
+  }
+
   @override
   Widget build(BuildContext context) {
     final photoExists = _photoPath != null && File(_photoPath!).existsSync();
@@ -163,6 +211,11 @@ class _DeviceDemoPageState extends State<DeviceDemoPage> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SensorDemoPage()),
             ),
+          ),
+          IconButton(
+            tooltip: 'Hapus draft lokal',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _busy ? null : _confirmClearDraft,
           ),
         ],
       ),
